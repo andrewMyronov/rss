@@ -248,31 +248,29 @@ func main() {
 			articleContent, fetchErr := fetchArticleContent(item.Link)
 
 			aiDescript := articleContent
-			if false {
-				if fetchErr != nil {
-					fmt.Printf("   ⚠️  Could not fetch article content: %v\n", fetchErr)
-					// Try with just the link (will likely fail but worth a shot)
-					resp, aiErr := genkit.Generate(ctx, g,
-						ai.WithPrompt("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself "+item.Link),
-						ai.WithModelName(aiModel),
-					)
-					if aiErr == nil {
-						aiDescript = "\n\n💡 " + resp.Text()
-					}
+			if fetchErr != nil {
+				fmt.Printf("   ⚠️  Could not fetch article content: %v\n", fetchErr)
+				// Try with just the link (will likely fail but worth a shot)
+				resp, aiErr := genkit.Generate(ctx, g,
+					ai.WithPrompt("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself. If cant summarize then just output AI FAILED"+item.Link),
+					ai.WithModelName(aiModel),
+				)
+				if aiErr == nil {
+					aiDescript = "\n\n💡 " + resp.Text()
+				}
+			} else {
+				prompt := fmt.Sprintf("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself. If cant summarize then just output AI FAILED:\n\nTitle: %s\n\nContent:\n%s",
+					item.Title, articleContent)
+
+				resp, aiErr := genkit.Generate(ctx, g,
+					ai.WithPrompt(prompt),
+					ai.WithModelName(aiModel),
+				)
+
+				if aiErr == nil {
+					aiDescript = "\n\n💡 " + resp.Text()
 				} else {
-					prompt := fmt.Sprintf("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself:\n\nTitle: %s\n\nContent:\n%s",
-						item.Title, articleContent)
-
-					resp, aiErr := genkit.Generate(ctx, g,
-						ai.WithPrompt(prompt),
-						ai.WithModelName(aiModel),
-					)
-
-					if aiErr == nil {
-						aiDescript = "\n\n💡 " + resp.Text()
-					} else {
-						fmt.Printf("   ⚠️  AI summary failed: %v\n", aiErr)
-					}
+					fmt.Printf("   ⚠️  AI summary failed: %v\n", aiErr)
 				}
 			}
 
