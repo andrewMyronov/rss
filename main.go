@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -73,6 +74,30 @@ type Item struct {
 	Title       string `xml:"title"`
 	Link        string `xml:"link"`
 	Description string `xml:"description"` // Some RSS feeds include short description
+}
+
+// convertToTelegramHTML converts simple markdown to Telegram-compatible HTML
+func convertToTelegramHTML(text string) string {
+	// Convert **bold** to <b>bold</b>
+	re := regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	text = re.ReplaceAllString(text, "<b>$1</b>")
+
+	// Convert *italic* to <i>italic</i>
+	re = regexp.MustCompile(`\*([^*]+)\*`)
+	text = re.ReplaceAllString(text, "<i>$1</i>")
+
+	// Escape special HTML characters
+	text = strings.ReplaceAll(text, "&", "&amp;")
+	text = strings.ReplaceAll(text, "<", "&lt;")
+	text = strings.ReplaceAll(text, ">", "&gt;")
+
+	// Restore our converted tags
+	text = strings.ReplaceAll(text, "&lt;b&gt;", "<b>")
+	text = strings.ReplaceAll(text, "&lt;/b&gt;", "</b>")
+	text = strings.ReplaceAll(text, "&lt;i&gt;", "<i>")
+	text = strings.ReplaceAll(text, "&lt;/i&gt;", "</i>")
+
+	return text
 }
 
 func loadState() map[string]bool {
@@ -281,7 +306,7 @@ func main() {
 				)
 
 				if aiErr == nil {
-					aiDescript = "\n\n💡 " + resp.Text()
+					aiDescript = "\n\n💡 " + convertToTelegramHTML(resp.Text())
 				} else {
 					fmt.Printf("   ⚠️  AI summary failed: %v\n", aiErr)
 				}
