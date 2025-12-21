@@ -10,12 +10,25 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 )
 
-const RSS_URL = "https://habr.com/ru/rss/articles/"
+// Top 10 RSS feeds for software engineers
+var RSS_FEEDS = []string{
+	"https://habr.com/ru/rss/articles/",
+	"https://hnrss.org/frontpage",               // Hacker News
+	"https://dev.to/feed",                       // Dev.to
+	"https://github.blog/feed/",                 // GitHub Blog
+	"https://stackoverflow.blog/feed/",          // Stack Overflow Blog
+	"https://martinfowler.com/feed.atom",        // Martin Fowler
+	"https://blog.golang.org/feed.atom",         // Go Blog
+	"https://aws.amazon.com/blogs/aws/feed/",    // AWS News
+	"https://www.reddit.com/r/programming/.rss", // r/programming
+	"https://thenewstack.io/feed/",              // The New Stack
+}
+
 const STATE_FILE = "state.json"
+const MAX_POSTS_PER_RUN = 10
 
 type RSS struct {
 	Channel struct {
@@ -70,6 +83,34 @@ func sendToTelegram(token, chatID, text string) error {
 	return nil
 }
 
+func fetchRSS(url string) (*RSS, error) {
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("bad status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read failed: %w", err)
+	}
+
+	var rss RSS
+	if err := xml.Unmarshal(body, &rss); err != nil {
+		return nil, fmt.Errorf("parse failed: %w", err)
+	}
+
+	return &rss, nil
+}
+
 func main() {
 	token := os.Getenv("TG_BOT_TOKEN")
 	chatID := os.Getenv("TG_CHANNEL_ID")
@@ -79,55 +120,54 @@ func main() {
 		return
 	}
 
-	resp, err := http.Get(RSS_URL)
-	if err != nil {
-		fmt.Println("RSS fetch failed:", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var rss RSS
-	if err := xml.Unmarshal(body, &rss); err != nil {
-		fmt.Println("RSS parse failed:", err)
-		return
-	}
-
 	state := loadState()
 	defer saveState(state) // 🔒 ALWAYS save state
 
-	for i := len(rss.Channel.Items) - 1; i >= 0; i-- {
-		item := rss.Channel.Items[i]
-		id := hash(item.Link) // more stable than title+link
+	postsSent := 0
 
-		if state[id] {
-			continue
-		}
-
-		msg := fmt.Sprintf("📰 %s\n%s", item.Title, item.Link)
-
-		for {
-			err := sendToTelegram(token, chatID, msg)
-			if err == nil {
-				state[id] = true
-				break
-			}
-
-			// Handle Telegram rate limit
-			if strings.Contains(err.Error(), "retry_after") {
-				fmt.Println("Rate limited, sleeping 35s...")
-				time.Sleep(35 * time.Second)
-				continue
-			}
-
-			// Log and SKIP (do not crash job)
-			fmt.Println("Send failed, skipping item:", err)
+	for _, feedURL := range RSS_FEEDS {
+		if postsSent >= MAX_POSTS_PER_RUN {
+			fmt.Printf("✅ Reached limit of %d posts, stopping\n", MAX_POSTS_PER_RUN)
 			break
 		}
 
-		time.Sleep(2 * time.Second) // safe pacing
+		fmt.Printf("📡 Fetching: %s\n", feedURL)
+
+		rss, err := fetchRSS(feedURL)
+		if err != nil {
+			fmt.Printf("⚠️  RSS feed failed (%s): %v\n", feedURL, err)
+			continue // Skip this feed and move to next
+		}
+
+		fmt.Printf("   Found %d items\n", len(rss.Channel.Items))
+
+		// Process from oldest to newest
+		for i := len(rss.Channel.Items) - 1; i >= 0; i-- {
+			if postsSent >= MAX_POSTS_PER_RUN {
+				break
+			}
+
+			item := rss.Channel.Items[i]
+			id := hash(item.Link)
+
+			if state[id] {
+				continue
+			}
+
+			msg := fmt.Sprintf("📰 %s\n%s", item.Title, item.Link)
+
+			err := sendToTelegram(token, chatID, msg)
+			if err == nil {
+				state[id] = true
+				postsSent++
+				fmt.Printf("   ✉️  Sent: %s\n", item.Title)
+			} else {
+				fmt.Printf("   ⚠️  Send failed, skipping item: %v\n", err)
+			}
+
+			time.Sleep(2 * time.Second) // safe pacing
+		}
 	}
 
-	fmt.Println("Job finished successfully")
+	fmt.Printf("\n🎉 Job finished: %d posts sent\n", postsSent)
 }
