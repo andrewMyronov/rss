@@ -34,6 +34,24 @@ var RSS_FEEDS = []string{
 	"https://thenewstack.io/feed/",              // The New Stack
 }
 
+const AI_PROMPT = `Summarize this article in a clear, structured format.
+	Use HTML formatting:
+	- <b>Bold text</b> for headers and important points
+	- <i>Italic</i> for emphasis
+	- Line breaks for readability
+
+	Include:
+	1. Brief summary (2-3 sentences)
+	2. Key points (bullet format with • symbol)
+	3. Your thoughts
+	4. Rating: X/10 - Should I read this?
+
+	If you can't summarize, just output: AI FAILED
+
+	Title: %s
+
+	Content: %s
+`
 const STATE_FILE = "state.json"
 const MAX_POSTS_PER_RUN = 1
 
@@ -73,8 +91,9 @@ func sendToTelegram(token, chatID, text string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 
 	body := map[string]any{
-		"chat_id": chatID,
-		"text":    text,
+		"chat_id":    chatID,
+		"text":       text,
+		"parse_mode": "HTML",
 	}
 
 	b, _ := json.Marshal(body)
@@ -243,27 +262,13 @@ func main() {
 				continue
 			}
 
-			// Fetch article content
-			fmt.Printf("   📄 Fetching article content...\n")
+			fmt.Printf("📄 Fetching article content...\n")
 			articleContent, fetchErr := fetchArticleContent(item.Link)
 
-			aiDescript := articleContent
-			if fetchErr != nil {
-				fmt.Printf("   ⚠️  Could not fetch article content: %v\n", fetchErr)
-				// Try with just the link (will likely fail but worth a shot)
+			aiDescript := "NO AI DESCRIPTION"
+			if fetchErr == nil {
 				resp, aiErr := genkit.Generate(ctx, g,
-					ai.WithPrompt("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself. If cant summarize then just output AI FAILED"+item.Link),
-					ai.WithModelName(aiModel),
-				)
-				if aiErr == nil {
-					aiDescript = "\n\n💡 " + resp.Text()
-				}
-			} else {
-				prompt := fmt.Sprintf("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself. If cant summarize then just output AI FAILED:\n\nTitle: %s\n\nContent:\n%s",
-					item.Title, articleContent)
-
-				resp, aiErr := genkit.Generate(ctx, g,
-					ai.WithPrompt(prompt),
+					ai.WithPrompt(fmt.Sprintf(AI_PROMPT, item.Title, articleContent)),
 					ai.WithModelName(aiModel),
 				)
 
