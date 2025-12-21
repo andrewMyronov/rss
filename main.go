@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +11,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
 
 // Top 10 RSS feeds for software engineers
@@ -28,7 +35,7 @@ var RSS_FEEDS = []string{
 }
 
 const STATE_FILE = "state.json"
-const MAX_POSTS_PER_RUN = 10
+const MAX_POSTS_PER_RUN = 1
 
 type RSS struct {
 	Channel struct {
@@ -37,8 +44,9 @@ type RSS struct {
 }
 
 type Item struct {
-	Title string `xml:"title"`
-	Link  string `xml:"link"`
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"` // Some RSS feeds include short description
 }
 
 func loadState() map[string]bool {
@@ -78,7 +86,7 @@ func sendToTelegram(token, chatID, text string) error {
 
 	if resp.StatusCode >= 300 {
 		rb, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf(string(rb))
+		return fmt.Errorf("%s", string(rb))
 	}
 	return nil
 }
@@ -111,14 +119,95 @@ func fetchRSS(url string) (*RSS, error) {
 	return &rss, nil
 }
 
+// fetchArticleContent extracts text content from a URL
+func fetchArticleContent(url string) (string, error) {
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("fetch failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("bad status: %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("parse failed: %w", err)
+	}
+
+	// Remove script, style, nav, footer, header elements
+	doc.Find("script, style, nav, footer, header, aside, .advertisement, .ad").Remove()
+
+	// Try to find main content (common article selectors)
+	var text string
+	selectors := []string{
+		"article",
+		"[role='main']",
+		".post-content",
+		".article-content",
+		".entry-content",
+		".content",
+		"main",
+	}
+
+	for _, selector := range selectors {
+		content := doc.Find(selector).First()
+		if content.Length() > 0 {
+			text = content.Text()
+			break
+		}
+	}
+
+	// Fallback to body if no article found
+	if text == "" {
+		text = doc.Find("body").Text()
+	}
+
+	// Clean up whitespace
+	text = strings.TrimSpace(text)
+	lines := strings.Split(text, "\n")
+	var cleaned []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			cleaned = append(cleaned, line)
+		}
+	}
+	text = strings.Join(cleaned, " ")
+
+	// Limit to ~3000 characters to avoid token limits
+	if len(text) > 3000 {
+		text = text[:3000] + "..."
+	}
+
+	return text, nil
+}
+
 func main() {
 	token := os.Getenv("TG_BOT_TOKEN")
 	chatID := os.Getenv("TG_CHANNEL_ID")
+	aiApiToken := os.Getenv("GEMINI_API_TOKEN")
+	aiModel := os.Getenv("GEMINI_MODEL")
 
 	if token == "" || chatID == "" {
 		fmt.Println("Missing TG_BOT_TOKEN or TG_CHANNEL_ID")
 		return
 	}
+
+	if aiApiToken == "" || aiModel == "" {
+		fmt.Println("Missing GEMINI_API_TOKEN or GEMINI_MODEL")
+		return
+	}
+
+	ctx := context.Background()
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{
+		APIKey: aiApiToken,
+	}))
 
 	state := loadState()
 	defer saveState(state) // 🔒 ALWAYS save state
@@ -154,8 +243,38 @@ func main() {
 				continue
 			}
 
-			msg := fmt.Sprintf("📰 %s\n%s", item.Title, item.Link)
+			// Fetch article content
+			fmt.Printf("   📄 Fetching article content...\n")
+			articleContent, fetchErr := fetchArticleContent(item.Link)
 
+			aiDescript := ""
+			if fetchErr != nil {
+				fmt.Printf("   ⚠️  Could not fetch article content: %v\n", fetchErr)
+				// Try with just the link (will likely fail but worth a shot)
+				resp, aiErr := genkit.Generate(ctx, g,
+					ai.WithPrompt("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself "+item.Link),
+					ai.WithModelName(aiModel),
+				)
+				if aiErr == nil {
+					aiDescript = "\n\n💡 " + resp.Text()
+				}
+			} else {
+				prompt := fmt.Sprintf("Summarize this article. Give me key points and your thoughts on it. Rate from 0 to 10 if i should read it myself:\n\nTitle: %s\n\nContent:\n%s",
+					item.Title, articleContent)
+
+				resp, aiErr := genkit.Generate(ctx, g,
+					ai.WithPrompt(prompt),
+					ai.WithModelName(aiModel),
+				)
+
+				if aiErr == nil {
+					aiDescript = "\n\n💡 " + resp.Text()
+				} else {
+					fmt.Printf("   ⚠️  AI summary failed: %v\n", aiErr)
+				}
+			}
+
+			msg := fmt.Sprintf("📰 %s\n%s%s", item.Title, item.Link, aiDescript)
 			err := sendToTelegram(token, chatID, msg)
 			if err == nil {
 				state[id] = true
