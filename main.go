@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 )
 
 const RSS_URL = "https://habr.com/ru/rss/articles/"
@@ -63,7 +65,7 @@ func sendToTelegram(token, chatID, text string) error {
 
 	if resp.StatusCode >= 300 {
 		rb, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("telegram error: %s", rb)
+		return fmt.Errorf(string(rb))
 	}
 	return nil
 }
@@ -73,12 +75,14 @@ func main() {
 	chatID := os.Getenv("TG_CHANNEL_ID")
 
 	if token == "" || chatID == "" {
-		panic("TG_BOT_TOKEN or TG_CHANNEL_ID missing")
+		fmt.Println("Missing TG_BOT_TOKEN or TG_CHANNEL_ID")
+		return
 	}
 
 	resp, err := http.Get(RSS_URL)
 	if err != nil {
-		panic(err)
+		fmt.Println("RSS fetch failed:", err)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -86,26 +90,44 @@ func main() {
 
 	var rss RSS
 	if err := xml.Unmarshal(body, &rss); err != nil {
-		panic(err)
+		fmt.Println("RSS parse failed:", err)
+		return
 	}
 
 	state := loadState()
+	defer saveState(state) // 🔒 ALWAYS save state
 
 	for i := len(rss.Channel.Items) - 1; i >= 0; i-- {
 		item := rss.Channel.Items[i]
-		id := hash(item.Title + item.Link)
+		id := hash(item.Link) // more stable than title+link
 
 		if state[id] {
 			continue
 		}
 
 		msg := fmt.Sprintf("📰 %s\n%s", item.Title, item.Link)
-		if err := sendToTelegram(token, chatID, msg); err != nil {
-			panic(err)
+
+		for {
+			err := sendToTelegram(token, chatID, msg)
+			if err == nil {
+				state[id] = true
+				break
+			}
+
+			// Handle Telegram rate limit
+			if strings.Contains(err.Error(), "retry_after") {
+				fmt.Println("Rate limited, sleeping 35s...")
+				time.Sleep(35 * time.Second)
+				continue
+			}
+
+			// Log and SKIP (do not crash job)
+			fmt.Println("Send failed, skipping item:", err)
+			break
 		}
 
-		state[id] = true
+		time.Sleep(2 * time.Second) // safe pacing
 	}
 
-	saveState(state)
+	fmt.Println("Job finished successfully")
 }
