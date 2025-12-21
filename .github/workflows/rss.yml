@@ -2,7 +2,7 @@ name: RSS → Telegram (Go)
 
 on:
   schedule:
-    - cron: "*/60 * * * *"   # every 10 minutes (UTC)
+    - cron: "*/30 * * * *"   # every 10 minutes (UTC)
   workflow_dispatch:
 
 permissions:
