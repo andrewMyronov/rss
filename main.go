@@ -312,7 +312,8 @@ func main() {
 				}
 			}
 
-			msg := fmt.Sprintf("📰 %s\n%s\n%s", item.Title, item.Link, aiDescript)
+			msg := fmt.Sprintf("📰 <b>%s</b>\n%s\n\n<blockquote expandable>💡 AI Summary:\n\n%s</blockquote>",
+				item.Title, item.Link, aiDescript)
 			err := sendToTelegram(token, chatID, msg)
 			if err == nil {
 				state[id] = true
