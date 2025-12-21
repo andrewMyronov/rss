@@ -34,24 +34,32 @@ var RSS_FEEDS = []string{
 	"https://thenewstack.io/feed/",              // The New Stack
 }
 
-const AI_PROMPT = `Summarize this article in a clear, structured format.
-	Use HTML formatting:
-	- <b>Bold text</b> for headers and important points
-	- <i>Italic</i> for emphasis
-	- Line breaks for readability
+const AI_PROMPT = `Summarize this article in plain text with simple formatting.
 
-	Include:
-	1. Brief summary (2-3 sentences)
-	2. Key points (bullet format with • symbol)
-	3. Your thoughts
-	4. Rating: X/10 - Should I read this?
+Format rules:
+- Use **bold** for section headers
+- Use bullet points (•) for lists
+- Keep it clean and readable
+- NO HTML tags
 
-	If you can't summarize, just output: AI FAILED
+Structure:
+**Summary:** 2-3 sentences
 
-	Title: %s
+**Key Points:**
+- Point 1
+- Point 2
+- Point 3
 
-	Content: %s
-`
+**My Thoughts:** Your analysis
+
+**Rating:** X/10 - Brief explanation
+
+If you can't summarize, output: AI FAILED
+
+Title: %s
+
+Content:
+%s`
 const STATE_FILE = "state.json"
 const MAX_POSTS_PER_RUN = 1
 
