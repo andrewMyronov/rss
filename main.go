@@ -199,8 +199,6 @@ func main() {
 		return
 	}
 
-	fmt.Println(aiApiToken)
-	fmt.Println(aiModel)
 	if aiApiToken == "" || aiModel == "" {
 		fmt.Println("Missing GEMINI_API_TOKEN or GEMINI_MODEL")
 		return
