@@ -307,13 +307,13 @@ func main() {
 				)
 
 				if aiErr == nil {
-					aiDescript = "💡 " + convertToTelegramHTML(resp.Text())
+					aiDescript = convertToTelegramHTML(resp.Text())
 				} else {
 					fmt.Printf("⚠️  AI summary failed: %v\n", aiErr)
 				}
 			}
 
-			msg := fmt.Sprintf("📰 <b><a href=\"%s\">%s</a></b>\n<blockquote expandable>%s</blockquote>",
+			msg := fmt.Sprintf("<b><a href=\"%s\">%s</a></b>\n<blockquote expandable>%s</blockquote>",
 				item.Link, item.Title, aiDescript)
 
 			err := sendToTelegram(token, chatID, msg)
