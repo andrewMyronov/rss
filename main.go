@@ -276,7 +276,7 @@ func main() {
 
 		rss, err := fetchRSS(feedURL)
 		if err != nil {
-			fmt.Printf("⚠️  RSS feed failed (%s): %v\n", feedURL, err)
+			fmt.Printf("⚠️RSS feed failed (%s): %v\n", feedURL, err)
 			continue // Skip this feed and move to next
 		}
 
@@ -306,13 +306,13 @@ func main() {
 				)
 
 				if aiErr == nil {
-					aiDescript = "\n\n💡 " + convertToTelegramHTML(resp.Text())
+					aiDescript = "💡 " + convertToTelegramHTML(resp.Text())
 				} else {
-					fmt.Printf("   ⚠️  AI summary failed: %v\n", aiErr)
+					fmt.Printf("⚠️  AI summary failed: %v\n", aiErr)
 				}
 			}
 
-			msg := fmt.Sprintf("📰 <b>%s</b>\n%s\n\n<blockquote expandable>💡 AI Summary:\n\n%s</blockquote>",
+			msg := fmt.Sprintf("📰 <b>%s</b>\n%s<blockquote expandable>💡 AI Summary:%s</blockquote>",
 				item.Title, item.Link, aiDescript)
 			err := sendToTelegram(token, chatID, msg)
 			if err == nil {
