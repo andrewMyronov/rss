@@ -124,10 +124,10 @@ func sendToTelegram(token, chatID, text string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 
 	body := map[string]any{
-		"chat_id":    chatID,
-		"text":       text,
-		"parse_mode": "HTML",
-  "disable_web_page_preview": true
+		"chat_id":                  chatID,
+		"text":                     text,
+		"parse_mode":               "HTML",
+		"disable_web_page_preview": true,
 	}
 
 	b, _ := json.Marshal(body)
@@ -312,6 +312,9 @@ func main() {
 					fmt.Printf("⚠️  AI summary failed: %v\n", aiErr)
 				}
 			}
+
+			msg := fmt.Sprintf("📰 <b><a href=\"%s\">%s</a></b>\n<blockquote expandable>%s</blockquote>",
+				item.Link, item.Title, aiDescript)
 
 			err := sendToTelegram(token, chatID, msg)
 			if err == nil {
