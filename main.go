@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"regexp"
@@ -25,84 +26,83 @@ import (
 var RSS_FEEDS = []string{
 	// General Tech News
 	"https://techcrunch.com/feed/",
-	"https://news.ycombinator.com/rss",              // Hacker News (alternative)
+	"https://news.ycombinator.com/rss", // Hacker News (alternative)
 	"https://dev.to/feed",
 
- "https://openai.com/blog/rss/",                  // OpenAI
-	"https://ai.googleblog.com/feeds/posts/default", // Google AI
+	"https://openai.com/blog/rss/",                     // OpenAI
+	"https://ai.googleblog.com/feeds/posts/default",    // Google AI
 	"https://blog.research.google/feeds/posts/default", // Google Research
-	
+
 	// Security & Privacy
-	"https://www.schneier.com/feed/atom/",           // Bruce Schneier
-	"https://krebsonsecurity.com/feed/",             // Cybersecurity news
-	
+	"https://www.schneier.com/feed/atom/", // Bruce Schneier
+	"https://krebsonsecurity.com/feed/",   // Cybersecurity news
+
 	// Broader Tech Analysis
-	"https://www.theverge.com/rss/index.xml",        // Tech culture/trends
-	"https://arstechnica.com/feed/",                 // In-depth tech analysis
-	"https://stratechery.com/feed/",                 // Tech strategy (some free posts)
-	
+	"https://www.theverge.com/rss/index.xml", // Tech culture/trends
+	"https://arstechnica.com/feed/",          // In-depth tech analysis
+	"https://stratechery.com/feed/",          // Tech strategy (some free posts)
+
 	// Hardware/Performance
-	"https://www.anandtech.com/rss/", 
-	
+	"https://www.anandtech.com/rss/",
+
 	// Go/Backend
 	"https://blog.golang.org/feed.atom",
-	"https://go.dev/blog/feed.atom",                 // Official Go blog (alternative URL)
-	"https://dave.cheney.net/feed",                  // Dave Cheney - Go expert
-	"https://www.ardanlabs.com/blog/index.xml",      // Ardan Labs - Go training
-	
+	"https://go.dev/blog/feed.atom",            // Official Go blog (alternative URL)
+	"https://dave.cheney.net/feed",             // Dave Cheney - Go expert
+	"https://www.ardanlabs.com/blog/index.xml", // Ardan Labs - Go training
+
 	// Cloud & Infrastructure
 	"https://aws.amazon.com/blogs/aws/feed/",
-	"https://cloudblog.withgoogle.com/rss/",         // Google Cloud Blog
+	"https://cloudblog.withgoogle.com/rss/", // Google Cloud Blog
 	"https://kubernetes.io/feed.xml",
 	"https://blog.cloudflare.com/rss/",
-	
+
 	// Microservices & Distributed Systems
-	"https://netflixtechblog.com/feed",              // Netflix - microservices at scale
-	"https://engineering.fb.com/feed/",              // Meta - distributed systems
+	"https://netflixtechblog.com/feed",                    // Netflix - microservices at scale
+	"https://engineering.fb.com/feed/",                    // Meta - distributed systems
 	"https://blog.twitter.com/engineering/en_us/blog.rss", // Twitter Engineering
-	"https://www.uber.com/blog/engineering/rss/",    // Uber Engineering
-	
+	"https://www.uber.com/blog/engineering/rss/",          // Uber Engineering
+
 	// JavaScript/TypeScript/React/Node.js
 	"https://react.dev/rss.xml",
 	"https://nodejs.org/en/feed/blog.xml",
 	"https://blog.npmjs.org/rss",
-	"https://www.typescriptlang.org/blog/rss.xml",   // TypeScript updates
-	
+	"https://www.typescriptlang.org/blog/rss.xml", // TypeScript updates
+
 	// Databases
 	"https://www.mongodb.com/blog/rss",
 	"https://www.postgresql.org/news.rss",
 	"https://redis.io/blog/rss.xml",
-	
+
 	// Mobile (Flutter/Dart/iOS)
 	"https://medium.com/flutter/feed",               // Flutter Medium
 	"https://dart.dev/feed.xml",                     // Dart language
 	"https://developer.apple.com/news/rss/news.rss", // Apple Developer News
-	
+
 	// DevOps & CI/CD
-	"https://about.gitlab.com/atom.xml",             // GitLab (CI/CD focus)
+	"https://about.gitlab.com/atom.xml", // GitLab (CI/CD focus)
 	"https://github.blog/feed/",
 	"https://circleci.com/blog/feed.xml",
 	"https://www.docker.com/blog/feed/",
-	
+
 	// Messaging & Event Streaming
-	"https://www.confluent.io/blog/feed/",           // Kafka (Confluent)
-	
+	"https://www.confluent.io/blog/feed/", // Kafka (Confluent)
+
 	// Engineering Practices
 	"https://martinfowler.com/feed.atom",
 	"https://stackoverflow.blog/feed/",
-	"https://blog.cleancoder.com/atom.xml",          // Uncle Bob
-	"https://jvns.ca/atom.xml",                      // Julia Evans
-	
+	"https://blog.cleancoder.com/atom.xml", // Uncle Bob
+	"https://jvns.ca/atom.xml",             // Julia Evans
+
 	// Russian Tech Community
 	"https://habr.com/ru/rss/articles/",
-	"https://habr.com/ru/rss/hubs/go/",             // Habr Go-specific
-	"https://habr.com/ru/rss/hubs/kubernetes/",     // Habr Kubernetes
-	
+	"https://habr.com/ru/rss/hubs/go/",         // Habr Go-specific
+	"https://habr.com/ru/rss/hubs/kubernetes/", // Habr Kubernetes
+
 	// General Aggregators
 	"https://thenewstack.io/feed/",
 	"https://changelog.com/feed",
 }
-
 
 const AI_PROMPT = `Summarize this article in plain text with simple formatting.
 
@@ -131,7 +131,7 @@ Title: %s
 Content:
 %s`
 const STATE_FILE = "state.json"
-const MAX_POSTS_PER_RUN = 100
+const MAX_POSTS_PER_RUN = 200
 
 type RSS struct {
 	Channel struct {
@@ -335,6 +335,13 @@ func main() {
 	defer saveState(state) // 🔒 ALWAYS save state
 
 	postsSent := 0
+
+	rand.Seed(time.Now().UnixNano())
+
+	// Shuffle RSS_FEEDS
+	rand.Shuffle(len(RSS_FEEDS), func(i, j int) {
+		RSS_FEEDS[i], RSS_FEEDS[j] = RSS_FEEDS[j], RSS_FEEDS[i]
+	})
 
 	for _, feedURL := range RSS_FEEDS {
 		if postsSent >= MAX_POSTS_PER_RUN {
