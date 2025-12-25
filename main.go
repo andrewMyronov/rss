@@ -62,7 +62,7 @@ Title: %s
 Content:
 %s`
 const STATE_FILE = "state.json"
-const MAX_POSTS_PER_RUN = 20
+const MAX_POSTS_PER_RUN = 100
 
 type RSS struct {
 	Channel struct {
